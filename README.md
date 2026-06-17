@@ -49,8 +49,19 @@ Ese documento está escrito como una receta operativa para agentes: incluye los 
 
 Si preferís hacerlo manualmente, podés seguir el mismo Markdown paso a paso.
 
+## Parches
+
+Para instalaciones hechas antes de la fecha del parche. Las instalaciones nuevas ya vienen con todo aplicado.
+
+| Fecha | Archivo |
+|-------|---------|
+| 2026-06-17 | [parche-idle-apagado.md](./parche-idle-apagado.md) |
+
 ## Contenido
 
 - `README.md`: explicación humana del proyecto.
 - `instalar-notificaciones-claude-codex.md`: guía de instalación detallada, pensada para que una IA pueda ejecutarla o adaptarla en otra computadora.
-- `parche-idle-apagado.md`: parche para instalaciones previas, que actualiza el script de Claude para que el aviso `idle_prompt` no notifique por defecto. Incluye cuándo aplicarlo y por qué.
+
+## Ver también
+
+- [statusline-claude-estilo-codex](https://github.com/FrannRod/statusline-claude-estilo-codex): statusline para Claude Code estilo Codex (modelo, esfuerzo, límites de uso, contexto, directorio y rama).
