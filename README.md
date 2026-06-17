@@ -11,8 +11,22 @@ La idea es simple: despues de cada turno aparece una ventana o notificacion y su
 - Configura hooks de finalizacion para Claude Code y Codex.
 - Muestra un popup cuando la herramienta termina o necesita atencion.
 - Reproduce un sonido usando los sonidos del sistema.
-- Permite elegir entre tres modos: ventana con OK, notificacion persistente o notificacion transitoria.
+- Permite elegir entre cuatro modos: ventana con OK, banner grande centrado, notificacion persistente o notificacion transitoria.
 - Deja scripts separados para Claude Code y Codex, porque cada herramienta entrega datos distintos al hook.
+
+## Modo banner
+
+El modo `banner` muestra una ventana grande centrada en pantalla, con un titular enorme y color, que queda abierta hasta que la cerras. Esta pensado para verse de lejos desde otro monitor: no es una notificacion chica en la esquina, es un cartel imposible de ignorar.
+
+![Modo banner: ventana grande centrada que dice TERMINO en verde](./assets/modo-banner.png)
+
+El color y el texto cambian segun el evento:
+
+- Verde **TERMINO**: la herramienta termino el turno y es tu turno.
+- Naranja **PIDE PERMISO**: hay una autorizacion pendiente.
+- Naranja **ESPERA INPUT**: hay una pregunta o revision pendiente.
+
+Usa `yad` para dibujar la ventana. Si `yad` no esta instalado, el script cae a `zenity`. Podes ajustar el tamano con `BANNER_WIDTH` / `BANNER_HEIGHT` y los tamanos de letra dentro del script. Para activarlo, poné `MODE="banner"` en el hook.
 
 ## Para quien es
 
@@ -20,7 +34,7 @@ Para usuarios de Linux con escritorio que usan Claude Code, Codex o ambos, y qui
 
 ## Requisitos
 
-La guia esta pensada para Linux con entorno grafico. Usa herramientas comunes como `zenity`, `notify-send`, `jq`, `paplay` o `pw-play`, y sonidos del tema Freedesktop.
+La guia esta pensada para Linux con entorno grafico. Usa herramientas comunes como `zenity`, `notify-send`, `jq`, `paplay` o `pw-play`, y sonidos del tema Freedesktop. El modo banner ademas necesita `yad`.
 
 El Markdown incluye comandos de verificacion antes de instalar paquetes, para evitar instalar cosas que ya estan disponibles.
 
