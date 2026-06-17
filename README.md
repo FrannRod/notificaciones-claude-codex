@@ -4,6 +4,8 @@ Este repo contiene una guia para configurar avisos de escritorio cuando Claude C
 
 La idea es simple: despues de cada turno aparece una ventana o notificacion y suena un aviso. Sirve para dejar a la IA trabajando sin tener que mirar la terminal todo el tiempo.
 
+![Ejemplo de notificacion al terminar un turno de Codex](./assets/notificacion-codex.png)
+
 ## Que hace
 
 - Configura hooks de finalizacion para Claude Code y Codex.
