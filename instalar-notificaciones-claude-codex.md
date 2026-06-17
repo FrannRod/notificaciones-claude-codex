@@ -11,13 +11,14 @@ Después de instalarlo, este archivo no participa en runtime. Lo que queda funci
 - Para Claude Code: seguí la sección "Instalar en Claude Code".
 - Para Codex: seguí la sección "Instalar en Codex".
 - Para ambos: ejecutá las dos secciones. Los scripts son distintos porque cada herramienta entrega datos distintos al hook.
-- Si una IA está instalando esto para un usuario, antes de escribir archivos debe preguntarle qué modo quiere: `dialog`, `persistent` o `transient`. Si el usuario no elige, usar `dialog`. Después debe poner ese valor explícitamente en la línea `MODE="..."` de cada script que instale.
+- Si una IA está instalando esto para un usuario, antes de escribir archivos debe preguntarle qué modo quiere: `dialog`, `banner`, `persistent` o `transient`. Si el usuario no elige, usar `dialog`. Después debe poner ese valor explícitamente en la línea `MODE="..."` de cada script que instale.
 
 ## Requisitos
 
 Linux con escritorio:
 
 - `zenity` para el modo default: ventana real con botón OK.
+- `yad` para el modo `banner`: ventana grande centrada, con texto enorme y color (verde/naranja), que queda abierta hasta que la cerrás. Pensado para ver de lejos desde otro monitor.
 - `notify-send` (`libnotify-bin`) para los modos de notificación `persistent` y `transient`.
 - `paplay` o `pw-play` para el sonido.
 - `jq` para leer el JSON del hook.
@@ -28,6 +29,7 @@ Antes de instalar nada, verificar si ya está disponible:
 ```bash
 command -v notify-send >/dev/null && echo "notify-send OK" || echo "falta notify-send"
 command -v zenity >/dev/null && echo "zenity OK" || echo "falta zenity"
+command -v yad >/dev/null && echo "yad OK (modo banner)" || echo "falta yad (solo si querés el modo banner)"
 command -v jq >/dev/null && echo "jq OK" || echo "falta jq"
 { command -v paplay >/dev/null || command -v pw-play >/dev/null; } && echo "audio OK" || echo "falta paplay o pw-play"
 test -f /usr/share/sounds/freedesktop/stereo/complete.oga && echo "sonidos OK" || echo "faltan sonidos freedesktop"
@@ -38,22 +40,22 @@ Instalar paquetes solo si alguno de esos chequeos falla. No uses `sudo` ni insta
 Debian/Ubuntu, solo si falta algo:
 
 ```bash
-sudo apt install zenity libnotify-bin pulseaudio-utils jq sound-theme-freedesktop
+sudo apt install zenity yad libnotify-bin pulseaudio-utils jq sound-theme-freedesktop
 ```
 
 Fedora, solo si falta algo:
 
 ```bash
-sudo dnf install zenity libnotify jq
+sudo dnf install zenity yad libnotify jq
 ```
 
 Arch, solo si falta algo:
 
 ```bash
-sudo pacman -S zenity libnotify jq sound-theme-freedesktop
+sudo pacman -S zenity yad libnotify jq sound-theme-freedesktop
 ```
 
-El modo por defecto es `dialog`: una ventana real con botón OK, usando `zenity`. Las otras dos opciones quedan disponibles: `persistent` usa `notify-send -u critical -t 0`, y `transient` usa `notify-send -u normal -t 8000`.
+El modo por defecto es `dialog`: una ventana real con botón OK, usando `zenity`. Las otras opciones quedan disponibles: `banner` usa `yad` para mostrar una ventana grande centrada (verde "TERMINÓ" / naranja "PIDE PERMISO" o "ESPERA INPUT") que queda abierta hasta cerrarla, ideal para ver de lejos; `persistent` usa `notify-send -u critical -t 0`, y `transient` usa `notify-send -u normal -t 8000`.
 
 ## Instalar en Claude Code
 
@@ -67,8 +69,21 @@ cat > ~/.claude/hooks/notify-stop.sh <<'EOF'
 #!/usr/bin/env bash
 # Claude Code hooks: popup + sonido cuando Claude termina o necesita atención.
 
-# MODO: "dialog" usa ventana con OK; "persistent" queda hasta click; "transient" se autocierra.
+# MODO: "dialog" ventana con OK; "banner" ventana grande centrada (yad) que queda
+#       hasta cerrarla; "persistent" queda hasta click; "transient" se autocierra.
 MODE="dialog"
+
+# Solo para el modo "banner": tamaño de la ventana en px.
+BANNER_WIDTH=900
+BANNER_HEIGHT=480
+
+# Aislar Cursor: el "Cursor Hooks Service" también lee ~/.claude/settings.json y
+# ejecuta este mismo hook al terminar su agente, generando notificaciones "fantasma"
+# aunque el CLI de Claude esté cerrado. El CLI de Claude siempre exporta CLAUDECODE=1;
+# Cursor no. Si no nos invocó el CLI de Claude, salimos sin notificar.
+if [ -z "${CLAUDECODE:-}" ]; then
+  exit 0
+fi
 
 input=$(cat)
 
@@ -104,18 +119,25 @@ run_detached() {
   fi
 }
 
+# headline y color se usan solo en el modo "banner".
 case "$kind" in
   permission_prompt)
     title="Claude pide permiso"
+    headline="PIDE PERMISO"
+    color="#b35900"
     body="Revisá la autorización pendiente.
 $cwd"
     ;;
   idle_prompt)
     title="Claude espera input"
+    headline="ESPERA INPUT"
+    color="#b35900"
     body="Hay una pregunta o revisión pendiente.
 $cwd"
     ;;
   *)
+    headline="TERMINÓ"
+    color="#1f7a1f"
     if [ -n "$chat" ]; then
       title="Claude terminó: $chat"
       body="Es tu turno.
@@ -127,6 +149,11 @@ $cwd"
     fi
     ;;
 esac
+
+# Escapar para markup Pango (lo usa yad en el modo banner).
+pango_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
 
 sound="/usr/share/sounds/freedesktop/stereo/complete.oga"
 [ -f "$sound" ] || sound="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
@@ -140,6 +167,24 @@ else
 fi
 
 case "$MODE" in
+  banner)
+    if command -v yad >/dev/null 2>&1; then
+      h=$(pango_escape "$headline")
+      b=$(pango_escape "$body")
+      # El color va en el TEXTO (no en --back, que el tema GTK suele ignorar dejando fondo blanco).
+      text="<span font='64' weight='bold' foreground='$color'>$h</span>
+<span font='24' foreground='#222222'>$b</span>"
+      # Sin --timeout: la ventana queda hasta que la cierres (botón Cerrar / Esc).
+      run_detached yad \
+        --width="$BANNER_WIDTH" --height="$BANNER_HEIGHT" --center --on-top \
+        --text-align=center --justify=center \
+        --button="Cerrar:0" \
+        --title="$title" \
+        --text="$text"
+    else
+      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+    fi
+    ;;
   dialog)
     if command -v zenity >/dev/null 2>&1; then
       run_detached zenity --info --title="$title" --text="$body" --no-wrap
@@ -194,10 +239,12 @@ mv "$tmp" ~/.claude/settings.json
 Abrí `/hooks` en Claude Code o reiniciá Claude Code.
 
 ```bash
-echo '{"cwd":"/tmp/mi-proyecto","transcript_path":""}' | ~/.claude/hooks/notify-stop.sh
-echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDE_NOTIFY_KIND=permission_prompt ~/.claude/hooks/notify-stop.sh
-echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDE_NOTIFY_KIND=idle_prompt ~/.claude/hooks/notify-stop.sh
+echo '{"cwd":"/tmp/mi-proyecto","transcript_path":""}' | CLAUDECODE=1 ~/.claude/hooks/notify-stop.sh
+echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDECODE=1 CLAUDE_NOTIFY_KIND=permission_prompt ~/.claude/hooks/notify-stop.sh
+echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDECODE=1 CLAUDE_NOTIFY_KIND=idle_prompt ~/.claude/hooks/notify-stop.sh
 ```
+
+> La guarda `CLAUDECODE` hace que el script solo notifique cuando lo invoca el CLI de Claude. Por eso las pruebas manuales necesitan `CLAUDECODE=1`; sin esa variable el script sale en silencio (es justamente lo que evita las notificaciones fantasma de Cursor).
 
 ## Instalar en Codex
 
@@ -220,8 +267,13 @@ cat > ~/.codex/hooks/notify-stop.sh <<'EOF'
 #!/usr/bin/env bash
 # Codex Stop hook: popup + sonido cuando Codex termina y es tu turno.
 
-# MODO: "dialog" usa ventana con OK; "persistent" queda hasta click; "transient" se autocierra.
+# MODO: "dialog" ventana con OK; "banner" ventana grande centrada (yad) que queda
+#       hasta cerrarla; "persistent" queda hasta click; "transient" se autocierra.
 MODE="dialog"
+
+# Solo para el modo "banner": tamaño de la ventana en px.
+BANNER_WIDTH=900
+BANNER_HEIGHT=480
 
 input=$(cat)
 
@@ -306,6 +358,9 @@ run_detached() {
   fi
 }
 
+# headline y color se usan solo en el modo "banner".
+headline="TERMINÓ"
+color="#1f7a1f"
 if [ -n "$chat" ]; then
   title="Codex terminó: $chat"
   body="Es tu turno.
@@ -315,6 +370,11 @@ else
   body="Es tu turno.
 $cwd"
 fi
+
+# Escapar para markup Pango (lo usa yad en el modo banner).
+pango_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
 
 sound="/usr/share/sounds/freedesktop/stereo/complete.oga"
 [ -f "$sound" ] || sound="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
@@ -328,6 +388,24 @@ else
 fi
 
 case "$MODE" in
+  banner)
+    if command -v yad >/dev/null 2>&1; then
+      h=$(pango_escape "$headline")
+      b=$(pango_escape "$body")
+      # El color va en el TEXTO (no en --back, que el tema GTK suele ignorar dejando fondo blanco).
+      text="<span font='64' weight='bold' foreground='$color'>$h</span>
+<span font='24' foreground='#222222'>$b</span>"
+      # Sin --timeout: la ventana queda hasta que la cierres (botón Cerrar / Esc).
+      run_detached yad \
+        --width="$BANNER_WIDTH" --height="$BANNER_HEIGHT" --center --on-top \
+        --text-align=center --justify=center \
+        --button="Cerrar:0" \
+        --title="$title" \
+        --text="$text"
+    else
+      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+    fi
+    ;;
   dialog)
     if command -v zenity >/dev/null 2>&1; then
       run_detached zenity --info --title="$title" --text="$body" --no-wrap
@@ -406,10 +484,11 @@ ln -sf ~/.claude/hooks/instalar-notificaciones-claude-codex.md ~/Documentos/noti
 
 ## Personalizar
 
-- Cambiar modo: `MODE="dialog"`, `MODE="persistent"` o `MODE="transient"`.
+- Cambiar modo: `MODE="dialog"`, `MODE="banner"`, `MODE="persistent"` o `MODE="transient"`.
 - Cambiar sonido: editá la variable `sound`.
 - Sin sonido: borrá el bloque de `paplay`/`pw-play`.
 - En modo dialog: requiere `zenity`; si falta, el script cae a `notify-send` persistente.
+- En modo banner: requiere `yad`; si falta, cae a `zenity`. Ajustá el tamaño con `BANNER_WIDTH`/`BANNER_HEIGHT` y los tamaños de letra en `font='64'` (titular) y `font='24'` (detalle). El color va en el texto (`foreground`), no en el fondo, porque muchos temas GTK ignoran `--back` y dejarían la ventana blanca con texto invisible. La ventana no tiene timeout: queda hasta que la cerrás (botón Cerrar o Esc).
 - En modo persistent: usa `notify-send -u critical -t 0`.
 - En modo transient: cambiá `-t 8000` para ajustar la duración en milisegundos.
 
