@@ -12,6 +12,7 @@ Después de instalarlo, este archivo no participa en runtime. Lo que queda funci
 - Para Codex: seguí la sección "Instalar en Codex".
 - Para ambos: ejecutá las dos secciones. Los scripts son distintos porque cada herramienta entrega datos distintos al hook.
 - Si una IA está instalando esto para un usuario, antes de escribir archivos debe preguntarle qué modo quiere: `dialog`, `banner`, `persistent` o `transient`. Si el usuario no elige, usar `dialog`. Después debe poner ese valor explícitamente en la línea `MODE="..."` de cada script que instale.
+- Además, solo para Claude, debe preguntarle qué hacer con el aviso `idle_prompt` (cuando Claude queda esperando tu input tras estar ocioso): `off` (default, no notifica nada), `transient` (notificación que se autocierra) o `inherit` (usa el mismo `MODE` de arriba). Este evento se dispara seguido, por eso el default es `off`. Poner ese valor en la línea `IDLE_MODE="..."` del script de Claude. Codex no tiene un evento equivalente, así que no lleva `IDLE_MODE`.
 
 ## Requisitos
 
@@ -61,6 +62,8 @@ El modo por defecto es `dialog`: una ventana real con botón OK, usando `zenity`
 
 Claude Code usa `~/.claude/settings.json` para registrar hooks. Esta instalación usa `Stop` para avisar cuando terminó el turno y `Notification` para avisar cuando Claude está esperando atención sin haber terminado, por ejemplo un permiso (`permission_prompt`) o input/revisión después de estar idle (`idle_prompt`). El hook `Stop` recibe un JSON con `cwd` y `transcript_path`; el script usa el transcript para mostrar el título autogenerado del chat cuando existe.
 
+El matcher `idle_prompt` queda siempre registrado en `settings.json`, pero quién decide si notifica es la variable `IDLE_MODE` del script. Con `IDLE_MODE="off"` (default) el script sale en silencio apenas detecta el evento, así que el `idle_prompt` no muestra nada y no hay que tocar `settings.json` para apagarlo. Ese es el único punto de control: para activarlo basta cambiar `IDLE_MODE` en el script.
+
 ### 1. Crear el script
 
 ```bash
@@ -72,6 +75,13 @@ cat > ~/.claude/hooks/notify-stop.sh <<'EOF'
 # MODO: "dialog" ventana con OK; "banner" ventana grande centrada (yad) que queda
 #       hasta cerrarla; "persistent" queda hasta click; "transient" se autocierra.
 MODE="dialog"
+
+# Aviso "idle_prompt" (Claude quedó esperando tu input tras estar ocioso). Se dispara
+# seguido y suele molestar, así que por defecto NO notifica nada.
+#   "off"       -> no hace nada (sin popup ni sonido)
+#   "transient" -> notificación que se autocierra, no roba foco (notify-send -t)
+#   "inherit"   -> usa el MODE de arriba (dialog/banner/persistent/transient)
+IDLE_MODE="off"
 
 # Solo para el modo "banner": tamaño de la ventana en px.
 BANNER_WIDTH=900
@@ -97,6 +107,11 @@ kind="${CLAUDE_NOTIFY_KIND:-}"
 [ -n "$kind" ] || kind=$(json_field '.notificationType')
 [ -n "$kind" ] || kind=$(json_field '.matcher')
 [ -n "$kind" ] || kind=$(json_field '.hook_event_name')
+
+# Idle apagado: salir antes de hacer ruido o popup.
+if [ "$kind" = "idle_prompt" ] && [ "$IDLE_MODE" = "off" ]; then
+  exit 0
+fi
 
 cwd=$(json_field '.cwd')
 [ -z "$cwd" ] && cwd="$PWD"
@@ -166,7 +181,13 @@ else
   printf '\a\a' >/dev/null
 fi
 
-case "$MODE" in
+# Para idle_prompt, IDLE_MODE puede forzar otro modo que el global.
+effective_mode="$MODE"
+if [ "$kind" = "idle_prompt" ] && [ "$IDLE_MODE" = "transient" ]; then
+  effective_mode="transient"
+fi
+
+case "$effective_mode" in
   banner)
     if command -v yad >/dev/null 2>&1; then
       h=$(pango_escape "$headline")
@@ -244,7 +265,11 @@ echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDECODE=1 CLAUDE_NOTIFY_KIND=permission_p
 echo '{"cwd":"/tmp/mi-proyecto"}' | CLAUDECODE=1 CLAUDE_NOTIFY_KIND=idle_prompt ~/.claude/hooks/notify-stop.sh
 ```
 
+> La tercera prueba (`idle_prompt`) no muestra nada con el default `IDLE_MODE="off"`: el script sale en silencio. Es lo esperado. Para verla, poné `IDLE_MODE="transient"` (o `inherit`) en el script y repetí esa línea.
+
 > La guarda `CLAUDECODE` hace que el script solo notifique cuando lo invoca el CLI de Claude. Por eso las pruebas manuales necesitan `CLAUDECODE=1`; sin esa variable el script sale en silencio (es justamente lo que evita las notificaciones fantasma de Cursor).
+
+> ¿Ya tenías una versión vieja instalada (anterior a `IDLE_MODE`), donde el `idle_prompt` abría un popup cada vez? No reinstales todo: aplicá [parche-idle-apagado.md](./parche-idle-apagado.md), que actualiza solo el script conservando tu configuración.
 
 ## Instalar en Codex
 
@@ -485,6 +510,7 @@ ln -sf ~/.claude/hooks/instalar-notificaciones-claude-codex.md ~/Documentos/noti
 ## Personalizar
 
 - Cambiar modo: `MODE="dialog"`, `MODE="banner"`, `MODE="persistent"` o `MODE="transient"`.
+- Aviso idle (solo Claude): `IDLE_MODE="off"` no notifica nada (default), `IDLE_MODE="transient"` muestra una notificación que se autocierra y `IDLE_MODE="inherit"` usa el mismo `MODE` que el resto. El `idle_prompt` se dispara seguido cuando Claude queda esperando tu input, por eso conviene `off` o `transient`.
 - Cambiar sonido: editá la variable `sound`.
 - Sin sonido: borrá el bloque de `paplay`/`pw-play`.
 - En modo dialog: requiere `zenity`; si falta, el script cae a `notify-send` persistente.

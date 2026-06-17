@@ -12,6 +12,7 @@ La idea es simple: después de cada turno aparece una ventana o notificación y 
 - Muestra un popup cuando la herramienta termina o necesita atención.
 - Reproduce un sonido usando los sonidos del sistema.
 - Permite elegir entre cuatro modos: ventana con OK, banner grande centrado, notificación persistente o notificación transitoria.
+- En Claude, el aviso de "espera input tras estar ocioso" (`idle_prompt`) viene **apagado por defecto** porque se dispara seguido y molesta; se puede activar como notificación transitoria (o heredando el modo general) con la variable `IDLE_MODE`.
 - Deja scripts separados para Claude Code y Codex, porque cada herramienta entrega datos distintos al hook.
 
 ## Modo banner
@@ -24,7 +25,7 @@ El color y el texto cambian según el evento:
 
 - Verde **TERMINÓ**: la herramienta terminó el turno y es tu turno.
 - Naranja **PIDE PERMISO**: hay una autorización pendiente.
-- Naranja **ESPERA INPUT**: hay una pregunta o revisión pendiente.
+- Naranja **ESPERA INPUT**: hay una pregunta o revisión pendiente. En Claude este aviso (`idle_prompt`) está apagado por defecto; para verlo en banner hay que poner `IDLE_MODE="inherit"` con `MODE="banner"`.
 
 Usa `yad` para dibujar la ventana. Si `yad` no está instalado, el script cae a `zenity`. Podés ajustar el tamaño con `BANNER_WIDTH` / `BANNER_HEIGHT` y los tamaños de letra dentro del script. Para activarlo, poné `MODE="banner"` en el hook.
 
@@ -52,3 +53,4 @@ Si preferís hacerlo manualmente, podés seguir el mismo Markdown paso a paso.
 
 - `README.md`: explicación humana del proyecto.
 - `instalar-notificaciones-claude-codex.md`: guía de instalación detallada, pensada para que una IA pueda ejecutarla o adaptarla en otra computadora.
+- `parche-idle-apagado.md`: parche para instalaciones previas, que actualiza el script de Claude para que el aviso `idle_prompt` no notifique por defecto. Incluye cuándo aplicarlo y por qué.
