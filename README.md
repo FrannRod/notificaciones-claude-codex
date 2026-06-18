@@ -11,6 +11,7 @@ La idea es simple: después de cada turno aparece una ventana o notificación y 
 - Configura hooks de finalización para Claude Code y Codex.
 - Muestra un popup cuando la herramienta termina o necesita atención.
 - Reproduce un sonido usando los sonidos del sistema.
+- Muestra como máximo una ventana de aviso por proyecto: si la IA para muchas veces seguidas (auto mode, monitors o loops), el aviso nuevo reemplaza al anterior del mismo proyecto en vez de apilar popups. Aplica a los modos de ventana real (`dialog` y `banner`).
 - Permite elegir entre cuatro modos: ventana con OK, banner grande centrado, notificación persistente o notificación transitoria.
 - En Claude, el aviso de "espera input tras estar ocioso" (`idle_prompt`) viene **apagado por defecto** porque se dispara seguido y molesta; se puede activar como notificación transitoria (o heredando el modo general) con la variable `IDLE_MODE`.
 - Deja scripts separados para Claude Code y Codex, porque cada herramienta entrega datos distintos al hook.
@@ -56,6 +57,7 @@ Para instalaciones hechas antes de la fecha del parche. Las instalaciones nuevas
 | Fecha | Archivo |
 |-------|---------|
 | 2026-06-17 | [parche-idle-apagado.md](./parche-idle-apagado.md) |
+| 2026-06-18 | [parche-dedup-ventanas.md](./parche-dedup-ventanas.md) |
 
 ## Contenido
 

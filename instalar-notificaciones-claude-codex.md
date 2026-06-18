@@ -134,6 +134,31 @@ run_detached() {
   fi
 }
 
+# Reemplazo por proyecto: máximo una ventana de aviso por carpeta. Evita el
+# "bombardeo" cuando Claude para muchas veces seguidas (auto mode / monitors):
+# antes de abrir un aviso nuevo, cierra el anterior del mismo cwd.
+notify_state_dir="${XDG_RUNTIME_DIR:-/tmp}/claude-notify"
+mkdir -p "$notify_state_dir" 2>/dev/null
+notify_key=$(printf '%s' "$cwd" | cksum | cut -d' ' -f1)
+notify_pidfile="$notify_state_dir/$notify_key.pid"
+
+close_previous_window() {
+  [ -f "$notify_pidfile" ] || return 0
+  local oldpid
+  oldpid=$(cat "$notify_pidfile" 2>/dev/null)
+  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    kill "$oldpid" 2>/dev/null
+  fi
+  rm -f "$notify_pidfile" 2>/dev/null
+}
+
+# Lanza una ventana real (zenity/yad) desacoplada y guarda su PID real para poder
+# cerrarla luego. Usa nohup (hace exec) para que $! sea el PID de la ventana.
+launch_window() {
+  nohup "$@" >/dev/null 2>&1 </dev/null &
+  printf '%s' "$!" > "$notify_pidfile"
+}
+
 # headline y color se usan solo en el modo "banner".
 case "$kind" in
   permission_prompt)
@@ -189,6 +214,7 @@ fi
 
 case "$effective_mode" in
   banner)
+    close_previous_window
     if command -v yad >/dev/null 2>&1; then
       h=$(pango_escape "$headline")
       b=$(pango_escape "$body")
@@ -196,19 +222,20 @@ case "$effective_mode" in
       text="<span font='64' weight='bold' foreground='$color'>$h</span>
 <span font='24' foreground='#222222'>$b</span>"
       # Sin --timeout: la ventana queda hasta que la cierres (botón Cerrar / Esc).
-      run_detached yad \
+      launch_window yad \
         --width="$BANNER_WIDTH" --height="$BANNER_HEIGHT" --center --on-top \
         --text-align=center --justify=center \
         --button="Cerrar:0" \
         --title="$title" \
         --text="$text"
     else
-      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+      launch_window zenity --info --title="$title" --text="$body" --no-wrap
     fi
     ;;
   dialog)
     if command -v zenity >/dev/null 2>&1; then
-      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+      close_previous_window
+      launch_window zenity --info --title="$title" --text="$body" --no-wrap
     else
       run_detached notify-send -a "Claude Code" -u critical -t 0 -i dialog-information "$title" "$body"
     fi
@@ -383,6 +410,31 @@ run_detached() {
   fi
 }
 
+# Reemplazo por proyecto: máximo una ventana de aviso por carpeta. Antes de abrir
+# un aviso nuevo, cierra el anterior del mismo cwd para que no se apilen ventanas
+# cuando Codex para varias veces seguidas.
+notify_state_dir="${XDG_RUNTIME_DIR:-/tmp}/codex-notify"
+mkdir -p "$notify_state_dir" 2>/dev/null
+notify_key=$(printf '%s' "$cwd" | cksum | cut -d' ' -f1)
+notify_pidfile="$notify_state_dir/$notify_key.pid"
+
+close_previous_window() {
+  [ -f "$notify_pidfile" ] || return 0
+  local oldpid
+  oldpid=$(cat "$notify_pidfile" 2>/dev/null)
+  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    kill "$oldpid" 2>/dev/null
+  fi
+  rm -f "$notify_pidfile" 2>/dev/null
+}
+
+# Lanza una ventana real (zenity/yad) desacoplada y guarda su PID real para poder
+# cerrarla luego. Usa nohup (hace exec) para que $! sea el PID de la ventana.
+launch_window() {
+  nohup "$@" >/dev/null 2>&1 </dev/null &
+  printf '%s' "$!" > "$notify_pidfile"
+}
+
 # headline y color se usan solo en el modo "banner".
 headline="TERMINÓ"
 color="#1f7a1f"
@@ -414,6 +466,7 @@ fi
 
 case "$MODE" in
   banner)
+    close_previous_window
     if command -v yad >/dev/null 2>&1; then
       h=$(pango_escape "$headline")
       b=$(pango_escape "$body")
@@ -421,19 +474,20 @@ case "$MODE" in
       text="<span font='64' weight='bold' foreground='$color'>$h</span>
 <span font='24' foreground='#222222'>$b</span>"
       # Sin --timeout: la ventana queda hasta que la cierres (botón Cerrar / Esc).
-      run_detached yad \
+      launch_window yad \
         --width="$BANNER_WIDTH" --height="$BANNER_HEIGHT" --center --on-top \
         --text-align=center --justify=center \
         --button="Cerrar:0" \
         --title="$title" \
         --text="$text"
     else
-      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+      launch_window zenity --info --title="$title" --text="$body" --no-wrap
     fi
     ;;
   dialog)
     if command -v zenity >/dev/null 2>&1; then
-      run_detached zenity --info --title="$title" --text="$body" --no-wrap
+      close_previous_window
+      launch_window zenity --info --title="$title" --text="$body" --no-wrap
     else
       run_detached notify-send -a "Codex" -u critical -t 0 -i dialog-information "$title" "$body"
     fi
@@ -509,6 +563,7 @@ ln -sf ~/.claude/hooks/instalar-notificaciones-claude-codex.md ~/Documentos/noti
 
 ## Personalizar
 
+- Reemplazo por proyecto (anti-bombardeo): el script muestra como máximo una ventana de aviso por carpeta. Antes de abrir un aviso nuevo cierra el anterior del mismo `cwd`, así no se apilan popups cuando la IA para muchas veces seguidas (auto mode, monitors o loops). Funciona con los modos de ventana real (`dialog` con `zenity` y `banner` con `yad`), que dejan un proceso vivo al que cerrar; el PID se guarda en `$XDG_RUNTIME_DIR/claude-notify/` (o `codex-notify/`). Los modos `persistent`/`transient` usan `notify-send`, que no deja proceso vivo: reemplazarlos requeriría `notify-send >= 0.8` (`--replace-id`); con versiones anteriores esos modos siguen apilando notificaciones.
 - Cambiar modo: `MODE="dialog"`, `MODE="banner"`, `MODE="persistent"` o `MODE="transient"`.
 - Aviso idle (solo Claude): `IDLE_MODE="off"` no notifica nada (default), `IDLE_MODE="transient"` muestra una notificación que se autocierra y `IDLE_MODE="inherit"` usa el mismo `MODE` que el resto. El `idle_prompt` se dispara seguido cuando Claude queda esperando tu input, por eso conviene `off` o `transient`.
 - Cambiar sonido: editá la variable `sound`.
